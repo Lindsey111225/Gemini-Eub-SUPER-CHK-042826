@@ -4,14 +4,7 @@
  */
 
 import React, { useState, useEffect, useMemo } from "react";
-import { 
-  Origin, 
-  RiskClass, 
-  ApplicationType, 
-  Rule, 
-  VisualEffectType, 
-} from "./types";
-import { DEFAULT_RULES, DOC_SCENARIOS } from "./constants/rules";
+import { Origin, RiskClass, ApplicationType, Rule, VisualEffectType } from "./types";
 import { PAINTER_STYLES } from "./constants/painterStyles";
 import { cn } from "./lib/utils";
 import { 
@@ -21,10 +14,13 @@ import {
   Terminal, Monitor, Activity, Zap
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { VisualEffects } from "./components/VisualEffects";
+import { RulesManager } from "./components/RulesManager";
+import { DocInspector } from "./components/DocInspector";
+import { ConflictDashboard } from "./components/ConflictDashboard";
 import { AgentChain } from "./components/AgentChain";
 import { NoteKeeper } from "./components/NoteKeeper";
-import { ConflictDashboard } from "./components/ConflictDashboard";
+import { VisualEffects } from "./components/VisualEffects";
+import { DEFAULT_MDPASS_RULES, ADVANCED_CONFLICT_RULES } from "./constants/rules";
 
 export default function App() {
   // --- Global State ---
@@ -35,7 +31,8 @@ export default function App() {
   const [effect, setEffect] = useState<VisualEffectType | null>(null);
   
   // --- Logic State ---
-  const [rules, setRules] = useState<Rule[]>(DEFAULT_RULES);
+  const [rules, setRules] = useState(DEFAULT_MDPASS_RULES);
+  const [advancedRules, setAdvancedRules] = useState(ADVANCED_CONFLICT_RULES);
   const [facts, setFacts] = useState({
     origin: Origin.IMPORT,
     risk: RiskClass.CLASS_3,
@@ -53,6 +50,7 @@ export default function App() {
     }
   });
   const [logs, setLogs] = useState<string[]>(["[SYSTEM] MDMDS 2.0 INITIALIZED", "[INFO] TFDA 附表四邏輯加載完成"]);
+  const [view, setView] = useState<"DASHBOARD" | "INSPECTOR">("DASHBOARD");
 
   // --- Theme Computed ---
   const painter = useMemo(() => 
@@ -61,26 +59,43 @@ export default function App() {
 
   // --- Rule Engine Logic ---
   const analysis = useMemo(() => {
-    const scenario = DOC_SCENARIOS.find(s => 
+    // Basic scenario matching from mdpass_rules.json
+    const scenario = rules.scenarios?.find((s: any) => 
       s.conditions.origin === facts.origin && 
       s.conditions.risk === facts.risk && 
-      s.conditions.type === facts.type
+      s.conditions.path === (facts.type === ApplicationType.STANDARD ? "STANDARD" : facts.type)
     );
 
-    const findings = rules.map(rule => {
-      // Mocking logic evaluation for demo
+    const findings = advancedRules.rules.map((rule: any) => {
+      // Logic simulation - trying to simulate the user provided python class logic
       let passed = true;
-      if (rule.id === "C01") passed = new Date(facts.dates.D4_issue_date) > new Date("2024-01-01");
-      if (rule.id === "C03") passed = !facts.attributes.isChinaOrigin; // Mock conflict
-      if (rule.id === "C06") passed = facts.attributes.isSterile;
+      const today = new Date();
+      
+      try {
+        if (rule.id === "C01") {
+          const issueDate = new Date(facts.dates.D4_issue_date);
+          const limit = new Date(today.getTime() - 730 * 24 * 60 * 60 * 1000);
+          passed = issueDate > limit;
+        } else if (rule.id === "C05") {
+          passed = !(facts.risk === RiskClass.CLASS_3 && !scenario?.req?.includes("D11"));
+        } else if (rule.id === "C06") {
+          passed = !(facts.attributes.isSterile && !scenario?.req?.includes("D25"));
+        }
+      } catch (e) {
+        passed = false;
+      }
+      
       return { rule, passed };
     });
 
-    const docRequirementsCount = scenario ? Object.keys(scenario.docRequirements).length : 5;
-    const provided = Math.floor(docRequirementsCount * 0.7);
+    const docList = {
+      required: scenario?.req || [],
+      conditional: scenario?.cond || [],
+      names: rules.base_docs || {}
+    };
 
-    return { findings, docStats: { required: docRequirementsCount, provided } };
-  }, [facts, rules]);
+    return { findings, docStats: { required: docList.required.length, provided: Math.floor(docList.required.length * 0.7) }, docList };
+  }, [facts, rules, advancedRules]);
 
   // --- Actions ---
   const jackpotStyle = () => {
@@ -89,29 +104,10 @@ export default function App() {
     setStyleId(random.id);
   };
 
-  const downloadRules = () => {
-    const blob = new Blob([JSON.stringify(rules, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "mdpass_advanced_rules.json";
-    a.click();
-  };
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const json = JSON.parse(ev.target?.result as string);
-        setRules(json);
-        setEffect("datastream");
-      } catch (err) {
-        console.error("Invalid JSON");
-      }
-    };
-    reader.readAsText(file);
+  const handleExecution = () => {
+    setEffect("scanline");
+    setLogs(prev => [...prev, `[EXEC] GENERATING DOC LIST FOR ${facts.origin}_${facts.risk}`]);
+    setView("DASHBOARD");
   };
 
   return (
@@ -135,6 +131,21 @@ export default function App() {
                 <p className="text-[10px] font-bold tracking-widest text-red-600 uppercase">Editorial & Artistic Edition V4.2</p>
             </div>
           </div>
+
+          <nav className="flex items-center gap-8">
+            <button 
+                onClick={() => setView("DASHBOARD")}
+                className={cn("text-xs font-black uppercase pb-1 border-b-2 transition-all", view === "DASHBOARD" ? "border-red-600" : "border-transparent opacity-50")}
+            >
+                {lang === "ZH" ? "判定儀表板" : "DASHBOARD"}
+            </button>
+            <button 
+                onClick={() => setView("INSPECTOR")}
+                className={cn("text-xs font-black uppercase pb-1 border-b-2 transition-all", view === "INSPECTOR" ? "border-red-600" : "border-transparent opacity-50")}
+            >
+                {lang === "ZH" ? "文件衝突引擎" : "DOC INSPECTOR"}
+            </button>
+          </nav>
 
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-2 border-r border-black/10 pr-6 mr-6">
@@ -219,20 +230,27 @@ export default function App() {
                 </div>
               </section>
 
-              <section>
-                <label className="text-[10px] font-black uppercase mb-2 block text-stone-400">案件類別 (Application)</label>
-                <select 
-                  value={facts.type}
-                  onChange={(e) => setFacts({...facts, type: e.target.value as ApplicationType})}
-                  className="w-full p-2 border-2 border-black text-xs font-bold focus:outline-none"
-                >
-                  <option value={ApplicationType.STANDARD}>{lang === "ZH" ? "標準程序" : "STANDARD"}</option>
-                  <option value={ApplicationType.DIFF_NAME}>{lang === "ZH" ? "不同品名" : "DIFF NAME"}</option>
-                  <option value={ApplicationType.EXPORT_ONLY}>{lang === "ZH" ? "專供外銷" : "EXPORT ONLY"}</option>
-                  <option value={ApplicationType.REISSUE}>{lang === "ZH" ? "遺失補發" : "REISSUE"}</option>
-                  <option value={ApplicationType.TRANSFER}>{lang === "ZH" ? "讓與變更" : "TRANSFER"}</option>
-                </select>
-              </section>
+              <div className="space-y-4">
+                  <section>
+                    <label className="text-[10px] font-black uppercase mb-2 block text-stone-400">案件類別 (Application)</label>
+                    <select 
+                        value={facts.type}
+                        onChange={(e) => setFacts({...facts, type: e.target.value as ApplicationType})}
+                        className="w-full p-2 border-2 border-black text-xs font-bold focus:outline-none bg-transparent"
+                    >
+                        <option value={ApplicationType.STANDARD}>{lang === "ZH" ? "標準程序" : "STANDARD"}</option>
+                        <option value={ApplicationType.DIFF_NAME}>{lang === "ZH" ? "不同品名" : "DIFF NAME"}</option>
+                        <option value={ApplicationType.EXPORT_ONLY}>{lang === "ZH" ? "專供外銷" : "EXPORT ONLY"}</option>
+                    </select>
+                  </section>
+                  
+                  <button 
+                    onClick={handleExecution}
+                    className="w-full py-3 bg-red-600 text-white font-black text-sm border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:shadow-none translate-y-[-2px] hover:translate-y-0 transition-all uppercase"
+                  >
+                    {lang === "ZH" ? "執行判定" : "EXECUTE"}
+                  </button>
+              </div>
 
               <div className="pt-4 border-t border-black/5 space-y-2">
                 <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-red-600" /><span className="text-[10px] font-bold">屬性覆蓋偵測</span></div>
@@ -254,42 +272,42 @@ export default function App() {
 
         {/* Center Canvas */}
         <div className="col-span-6 space-y-8">
-          <ConflictDashboard findings={analysis.findings} docStats={analysis.docStats} />
-          <div className="grid grid-cols-2 gap-8">
-            <AgentChain apiKey={apiKey} onEffect={setEffect} />
-            <NoteKeeper apiKey={apiKey} onEffect={setEffect} />
-          </div>
+          {view === "DASHBOARD" ? (
+              <>
+                <ConflictDashboard findings={analysis.findings} docStats={analysis.docStats} docList={analysis.docList} />
+                <div className="grid grid-cols-2 gap-8">
+                    <AgentChain apiKey={apiKey} onEffect={setEffect} />
+                    <NoteKeeper apiKey={apiKey} onEffect={setEffect} />
+                </div>
+              </>
+          ) : (
+              <DocInspector apiKey={apiKey} onEffect={setEffect} advancedRules={advancedRules} lang={lang} />
+          )}
         </div>
 
         {/* Right Sidebar */}
         <aside className="col-span-3 space-y-6">
-          <div className={cn("p-6 border-2 border-black", painter.cardBg, painter.shadow)}>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xs font-black uppercase flex items-center gap-2">
-                <Database size={14} className="text-red-600" /> RULES DB
-              </h2>
-              <div className="flex gap-2">
-                <button onClick={downloadRules} className="p-1 border border-black"><Download size={14} /></button>
-                <label className="p-1 border border-black cursor-pointer">
-                  <Upload size={14} />
-                  <input type="file" className="hidden" onChange={handleFileUpload} />
-                </label>
-              </div>
-            </div>
-            <div className="h-48 overflow-auto space-y-2 text-[10px] font-mono">
-              {rules.map(r => (
-                <div key={r.id} className="p-2 bg-stone-50 border border-black/5">
-                  <span className="font-bold">{r.id}:</span> {r.name}
-                </div>
-              ))}
-            </div>
-          </div>
+          <RulesManager 
+            title={lang === "ZH" ? "MDPASS 查驗登記規則 (標準)" : "MDPASS RULES (STD)"}
+            filename="mdpass_rules.json"
+            rules={rules} 
+            onUpdate={setRules} 
+            lang={lang} 
+          />
 
-          <div className={cn("p-6 border-2 border-black bg-stone-900 text-green-400 font-mono text-[10px] h-[300px]", painter.shadow)}>
+          <RulesManager 
+            title={lang === "ZH" ? "智慧衝突判定規則 (進階)" : "SMART CONFLICT RULES"}
+            filename="advanced_conflict_rules.json"
+            rules={advancedRules} 
+            onUpdate={setAdvancedRules} 
+            lang={lang} 
+          />
+          
+          <div className={cn("p-6 border-2 border-black bg-stone-900 text-green-400 font-mono text-[10px] h-[200px]", painter.shadow)}>
             <div className="flex items-center gap-2 mb-2 border-b border-green-400/20 pb-1">
               <Activity size={14} /><span>LIVE LOGS</span>
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1 overflow-auto h-full pb-8">
               {logs.map((log, i) => <div key={i}><span className="opacity-50 mr-2">{">"}</span>{log}</div>)}
             </div>
           </div>

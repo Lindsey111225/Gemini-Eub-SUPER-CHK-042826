@@ -27,12 +27,19 @@ export interface Rule {
 
 export interface DocScenario {
   id: string;
-  conditions: {
-    origin: Origin;
-    risk: RiskClass;
-    type: ApplicationType;
-  };
-  docRequirements: Record<string, "REQUIRED" | "OPTIONAL" | "EXEMPT">;
+  name: string; // Added name field
+  conditions: Record<string, any>; // Relaxed conditions for more flexible matching
+  req: string[]; // Required docs
+  cond: string[]; // Conditional docs
+}
+
+export interface MdPassRules {
+  version: string;
+  law_reference: string;
+  last_updated: string;
+  description: string;
+  base_docs: Record<string, string>;
+  scenarios: DocScenario[];
 }
 
 export interface PainterStyle {

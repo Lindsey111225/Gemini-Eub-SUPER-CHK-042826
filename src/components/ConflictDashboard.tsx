@@ -7,9 +7,10 @@ import { cn } from "../lib/utils";
 interface ConflictDashboardProps {
   findings: Array<{ rule: Rule; passed: boolean }>;
   docStats: { required: number; provided: number };
+  docList: { required: string[]; conditional: string[]; names: Record<string, string> };
 }
 
-export const ConflictDashboard: React.FC<ConflictDashboardProps> = ({ findings, docStats }) => {
+export const ConflictDashboard: React.FC<ConflictDashboardProps> = ({ findings, docStats, docList }) => {
   const data = [
     { name: "已核驗", value: findings.filter(f => f.passed).length, color: "#16a34a" },
     { name: "有衝突", value: findings.filter(f => !f.passed).length, color: "#dc2626" },
@@ -104,6 +105,39 @@ export const ConflictDashboard: React.FC<ConflictDashboardProps> = ({ findings, 
                         <Bar dataKey="count" fill="#000" radius={[4, 4, 0, 0]} />
                     </BarChart>
                 </ResponsiveContainer>
+            </div>
+        </div>
+      </div>
+
+      <div className="col-span-12 p-6 border-2 border-black bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]">
+        <h3 className="text-xl font-black uppercase tracking-tight flex items-center gap-2 mb-6 border-b-2 border-black pb-2">
+            <CheckCircle2 size={24} className="text-green-600" /> 應檢附文件清單 (Generated Doc List)
+        </h3>
+        <div className="grid grid-cols-2 gap-8">
+            <div className="space-y-4">
+                <h4 className="text-xs font-black uppercase bg-black text-white px-3 py-1 inline-block">必須文件 (Mandatory)</h4>
+                <div className="space-y-2">
+                    {docList.required.map(id => (
+                        <div key={id} className="flex items-center gap-3 p-2 border border-black/10 hover:border-black transition-colors group">
+                            <span className="w-8 font-black text-red-600">{id}</span>
+                            <span className="text-xs font-bold">{docList.names[id] || "未知文件"}</span>
+                        </div>
+                    ))}
+                </div>
+            </div>
+            <div className="space-y-4">
+                <h4 className="text-xs font-black uppercase bg-stone-200 text-stone-700 px-3 py-1 inline-block">彈性檢附 (Conditional)</h4>
+                <div className="space-y-2">
+                    {docList.conditional.map(id => (
+                        <div key={id} className="flex items-center gap-3 p-2 border border-black/10 opacity-60 hover:opacity-100 transition-opacity">
+                            <span className="w-8 font-black text-stone-400">{id}</span>
+                            <span className="text-xs font-bold">{docList.names[id] || "特定條件文件"}</span>
+                        </div>
+                    ))}
+                    {docList.conditional.length === 0 && (
+                        <div className="text-xs italic text-stone-400">目前設定下無額外條件文件</div>
+                    )}
+                </div>
             </div>
         </div>
       </div>
